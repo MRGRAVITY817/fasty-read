@@ -1,16 +1,42 @@
-use std::{fs, io};
+use std::{fs, io, time::Instant};
+
+/// Custom result type alias
+pub type FastyResult<T> = Result<T, io::Error>;
 
 /// Count the match counts of alphabets inside the imported file.
-pub fn count_alpha(file_path: &str, alphabets: &[char]) -> Result<usize, io::Error> {
+pub fn count_alpha(file_path: &str, alphabets: &[char]) -> FastyResult<u128> {
     let file_text = fs::read_to_string(file_path)?;
     let counts = file_text.matches(alphabets).count();
-    Ok(counts)
+    Ok(counts as u128)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CountOutput {
+    counts: u128,
+    elapsed: u128,
+}
+
+/// Count alphabets on multiple files (sequentially)
+pub fn count_multiple_seq(file_paths: &[String], alphabets: &[char]) -> FastyResult<CountOutput> {
+    let now = Instant::now(); // Timer start!
+
+    let count_results = file_paths
+        .iter()
+        .map(|file_path| count_alpha(&file_path, &alphabets))
+        .collect::<FastyResult<Vec<_>>>();
+
+    let counts: u128 = count_results?.into_iter().sum();
+    let elapsed = now.elapsed().as_micros(); // Timer ends.
+
+    Ok(CountOutput { counts, elapsed })
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use lipsum::lipsum_words;
     use std::fs;
+
     #[test]
     fn should_count_given_alphabets_from_a_text_file() {
         // Arrange
@@ -22,10 +48,30 @@ mod test {
         )
         .unwrap();
         // Act
-        let result = count_alpha(&file_path, &alphabets);
-        // Assert
-        assert_eq!(5, result.unwrap());
+        let result = count_alpha(&file_path, &alphabets).unwrap();
         // remove generated txt file
         fs::remove_file(&file_path).unwrap();
+        // Assert
+        assert_eq!(5, result);
+    }
+
+    #[test]
+    fn should_count_on_multiple_files() {
+        // Arrange
+        let file_paths: Vec<String> = (0..16).map(|num| format!("data/{num}.txt")).collect();
+        let words = 100;
+        file_paths.iter().for_each(|file_path| {
+            let content = lipsum_words(words);
+            fs::write(file_path, content).unwrap();
+        });
+        let alphabets = vec!['a', 'c'];
+        // Act
+        let result = count_multiple_seq(&file_paths, &alphabets).unwrap();
+        // remove generated txt files
+        file_paths.iter().for_each(|file_path| {
+            fs::remove_file(file_path).unwrap();
+        });
+        // Assert
+        assert!(matches!(result, CountOutput { .. }));
     }
 }
